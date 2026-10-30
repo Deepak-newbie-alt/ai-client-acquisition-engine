@@ -1,0 +1,14 @@
+# Never send secrets or local build output into the image build context.
+.env
+.env.*
+!.env.example
+!.env.production.example
+.git
+node_modules
+web/node_modules
+dist
+web/dist
+coverage
+src/generated
+backups
+*.log

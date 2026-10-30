@@ -1,0 +1,90 @@
+{
+  "name": "ACE: weekly research run",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "weeksInterval": 1,
+              "triggerAtDay": [
+                1
+              ],
+              "triggerAtHour": 7
+            }
+          ]
+        }
+      },
+      "id": "aa515bb5-70e4-48f2-b09f-f2071d8ac56b",
+      "name": "Every Monday 07:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://ace.example.com/api/research-runs",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"industry\": \"HVAC\",\n  \"country\": \"GB\",\n  \"keywords\": [\n    \"scheduling\",\n    \"job sheets\"\n  ],\n  \"resultLimit\": 10\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "17076a42-0927-469c-b529-8b308aa33abe",
+      "name": "Create research run",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        260,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_ME",
+          "name": "ACE service token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## Weekly research run\nQueues one research run. The API applies the per-run and monthly budgets; a run over budget is refused with 429 BUDGET_EXCEEDED.\n\nEdit the URL and JSON body. Credential: Header Auth, name `Authorization`, value `Bearer ace_st_...` from `npm run token:create -- --name n8n-research --scopes research:write`.\n\nNo retries: a timed-out request may still have created the run.",
+        "height": 260,
+        "width": 420
+      },
+      "id": "d00fcdde-f452-40de-a83a-b3a1337caecc",
+      "name": "Read me",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -320
+      ]
+    }
+  ],
+  "connections": {
+    "Every Monday 07:00": {
+      "main": [
+        [
+          {
+            "node": "Create research run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {}
+}

@@ -1,0 +1,12 @@
+# Caddy obtains and renews a TLS certificate for {$DOMAIN} automatically
+# (the domain's DNS must point at this host and ports 80/443 must be open).
+# Plain HTTP is redirected to HTTPS. Caddy ignores X-Forwarded-For sent by
+# clients and sets it to the real peer address, which the API trusts (TRUST_PROXY=1).
+{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy app:3000
+	log {
+		output stdout
+		format json
+	}
+}

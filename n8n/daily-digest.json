@@ -1,0 +1,166 @@
+{
+  "name": "ACE: daily digest",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "daysInterval": 1,
+              "triggerAtHour": 8
+            }
+          ]
+        }
+      },
+      "id": "a45e53ba-fade-491d-b99d-d04ea424312d",
+      "name": "Every day 08:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://ace.example.com/api/research-runs?limit=50",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "09407498-33dd-4e47-ba18-25132e681bb6",
+      "name": "List recent runs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        260,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_ME",
+          "name": "ACE service token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://ace.example.com/api/usage",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "bfeb1645-c57b-41ed-939b-4cd3230c39d9",
+      "name": "Usage this month",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        520,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_ME",
+          "name": "ACE service token"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Builds a plain-text summary of the last 24 hours. Data only; nothing is sent from here.\nconst since = Date.now() - 24 * 60 * 60 * 1000;\nconst runs = $('List recent runs').first().json.runs ?? [];\nconst usage = $('Usage this month').first().json;\nconst recent = runs.filter((r) => r.completedAt && Date.parse(r.completedAt) >= since);\nconst usd = (m) => `$${(Number(m) / 1e6).toFixed(2)}`;\nconst lines = recent.map((r) => `- ${r.industry} / ${r.country}: ${r.status}, ${r._count?.evidence ?? 0} evidence, ${usd(r.costMicros)}`);\nreturn [{ json: {\n  finishedRuns: recent.length,\n  failedRuns: recent.filter((r) => r.status === 'FAILED').length,\n  text: [`ACE daily digest: ${recent.length} run(s) finished in the last 24h.`, ...lines, `Spend this month: ${usd(usage.spentMicros)} of ${usd(usage.monthlyBudgetMicros)}.`].join('\\n'),\n} }];"
+      },
+      "id": "9f74078f-dd22-4c79-8436-da9b1501e98b",
+      "name": "Build summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        780,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "22b7db6e-b6cf-4268-9bd1-2ec9100367d8",
+      "name": "Send to me (replace with Slack/email node)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1040,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Daily digest\nSummarises research runs finished in the last 24 hours and this month's spend. Replace the last node with a Slack, Telegram or email node addressed to yourself.\n\nThe token needs only `research:read`: `npm run token:create -- --name n8n-digest --scopes research:read`. Review opportunities and drafts in the dashboard; n8n cannot approve or send outreach.",
+        "height": 260,
+        "width": 420
+      },
+      "id": "875c0056-5045-4772-98c4-88a28cd5083f",
+      "name": "Read me",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -320
+      ]
+    }
+  ],
+  "connections": {
+    "Every day 08:00": {
+      "main": [
+        [
+          {
+            "node": "List recent runs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "List recent runs": {
+      "main": [
+        [
+          {
+            "node": "Usage this month",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Usage this month": {
+      "main": [
+        [
+          {
+            "node": "Build summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build summary": {
+      "main": [
+        [
+          {
+            "node": "Send to me (replace with Slack/email node)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {}
+}

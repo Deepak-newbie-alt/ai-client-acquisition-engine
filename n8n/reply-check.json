@@ -1,0 +1,152 @@
+{
+  "name": "ACE: check outreach replies",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 30
+            }
+          ]
+        }
+      },
+      "id": "3b3d21ed-d341-4288-b19b-860327623273",
+      "name": "Every 30 minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://ace.example.com/api/outreach/check-replies",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "6587c17b-6f2c-4350-8835-7e34c5d59a45",
+      "name": "Check replies",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        260,
+        0
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_ME",
+          "name": "ACE service token"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c9e89bfe-d250-49cc-997b-8522bb2dfb07",
+              "leftValue": "={{ $json.errors }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "523cd8b7-0b85-4ea2-b358-fa4b4b9796e7",
+      "name": "Any errors?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        520,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "0e74f34f-1581-4440-95e7-8d7fe95e6708",
+      "name": "Notify me (replace with Slack/email node)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        780,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Reply check\nAsks the API to look for replies to sent outreach. Replies stop follow-ups; opt-outs add the address to the suppression list.\n\nThe token needs only `outreach:sync`: `npm run token:create -- --name n8n-replies --scopes outreach:sync`. It cannot create, approve or send drafts.\n\nResponse: `{ checked, replied, optedOut, errors }`.",
+        "height": 260,
+        "width": 420
+      },
+      "id": "487d0818-c5f3-45b5-b304-914a86c12d90",
+      "name": "Read me",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -320
+      ]
+    }
+  ],
+  "connections": {
+    "Every 30 minutes": {
+      "main": [
+        [
+          {
+            "node": "Check replies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check replies": {
+      "main": [
+        [
+          {
+            "node": "Any errors?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any errors?": {
+      "main": [
+        [
+          {
+            "node": "Notify me (replace with Slack/email node)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "pinData": {}
+}

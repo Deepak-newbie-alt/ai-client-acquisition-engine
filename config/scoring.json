@@ -1,0 +1,12 @@
+{
+  "version": "2026-10-30.1",
+  "description": "Relative weights for opportunity ranking. Scores are heuristics for prioritizing human review, not probabilities of commercial success. Bump 'version' whenever weights change; stored scores record the version used.",
+  "weights": {
+    "FREQUENCY": 0.2,
+    "BUSINESS_IMPACT": 0.2,
+    "EVIDENCE_QUALITY": 0.2,
+    "RECURRENCE": 0.2,
+    "BUYER_ACCESSIBILITY": 0.1,
+    "DIFFERENTIATION": 0.1
+  }
+}

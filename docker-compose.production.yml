@@ -1,0 +1,70 @@
+# Single-host production stack: Postgres, a one-off migration job, the API
+# (which also serves the dashboard) and Caddy terminating HTTPS.
+#
+#   cp .env.production.example .env.production   # fill it in
+#   docker compose -f docker-compose.production.yml --env-file .env.production up -d --build
+#
+# Only Caddy publishes ports. Postgres and the API are reachable only on the
+# internal network. A managed Postgres with point-in-time recovery is a good
+# alternative to the db service: point DATABASE_URL at it and remove "db".
+name: ace-production
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ace}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-ace}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  migrate:
+    build: { context: ., target: migrate }
+    env_file: .env.production
+    depends_on:
+      db: { condition: service_healthy }
+    restart: "no"
+
+  app:
+    build: { context: ., target: runtime }
+    image: ace:latest
+    restart: unless-stopped
+    env_file: .env.production
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "3000"
+      # Exactly one proxy (Caddy) sits in front of the API.
+      TRUST_PROXY: "1"
+      WEB_DIST_DIR: /app/web/dist
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN, e.g. ace.example.com}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [app]
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,512 @@
+// Prisma 7: the connection URL lives in prisma.config.ts, and the client is
+// generated into src/generated/prisma (never committed).
+//
+// Partial unique indexes use the partialIndexes preview feature. CHECK
+// constraints and the append-only audit trigger cannot be expressed here and
+// are raw SQL at the end of prisma/migrations/*_init/migration.sql.
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+  previewFeatures     = ["partialIndexes"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum UserRole {
+  ADMIN
+  REVIEWER
+}
+
+enum ActorType {
+  USER
+  SERVICE
+  SYSTEM
+}
+
+enum ResearchRunStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
+enum SourceType {
+  WEB_PAGE
+  ARTICLE
+  FORUM
+  REVIEW
+  JOB_POSTING
+  OTHER
+}
+
+enum RetrievalStatus {
+  PENDING
+  FETCHED
+  SKIPPED
+  FAILED
+}
+
+enum EvidenceKind {
+  OBSERVED
+  INFERRED
+  UNKNOWN
+}
+
+enum ValidationStatus {
+  PENDING
+  VALID
+  REJECTED
+}
+
+enum ScoreComponent {
+  FREQUENCY
+  BUSINESS_IMPACT
+  EVIDENCE_QUALITY
+  RECURRENCE
+  BUYER_ACCESSIBILITY
+  DIFFERENTIATION
+}
+
+enum CompanyResearchStatus {
+  DISCOVERED
+  RESEARCHING
+  RESEARCHED
+  EXCLUDED
+}
+
+enum ContactVerificationStatus {
+  UNVERIFIED
+  VERIFIED
+  INVALID
+}
+
+enum DraftStatus {
+  DRAFT
+  APPROVED
+  SENDING
+  SENT
+  REJECTED
+  CANCELLED
+  FAILED
+}
+
+enum SendOutcome {
+  SUCCESS
+  FAILURE
+  UNKNOWN
+}
+
+enum SuppressionScope {
+  EMAIL
+  DOMAIN
+}
+
+enum UsageKind {
+  SEARCH
+  LLM
+}
+
+// ---------------------------------------------------------------------------
+// Auth
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String    @id @default(uuid()) @db.Uuid
+  email        String    @unique
+  displayName  String
+  passwordHash String
+  role         UserRole  @default(REVIEWER)
+  disabledAt   DateTime? @db.Timestamptz(3)
+  createdAt    DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime  @updatedAt @db.Timestamptz(3)
+
+  sessions      Session[]
+  approvals     Approval[]
+  createdDrafts OutreachDraft[]
+}
+
+model Session {
+  id         String    @id @default(uuid()) @db.Uuid
+  // SHA-256 of the opaque cookie token; the raw token is never stored.
+  tokenHash  String    @unique
+  userId     String    @db.Uuid
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+  lastSeenAt DateTime  @default(now()) @db.Timestamptz(3)
+  expiresAt  DateTime  @db.Timestamptz(3)
+  revokedAt  DateTime? @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// Machine credentials (e.g. n8n). Scopes never include approve or send.
+model ServiceToken {
+  id         String    @id @default(uuid()) @db.Uuid
+  name       String    @unique
+  tokenHash  String    @unique
+  scopes     String[]
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+  lastUsedAt DateTime? @db.Timestamptz(3)
+  revokedAt  DateTime? @db.Timestamptz(3)
+}
+
+// ---------------------------------------------------------------------------
+// Research
+// ---------------------------------------------------------------------------
+
+model ResearchRun {
+  id              String            @id @default(uuid()) @db.Uuid
+  query           String
+  industry        String
+  country         String
+  companySize     String?
+  keywords        String[]
+  resultLimit     Int
+  status          ResearchRunStatus @default(QUEUED)
+  errorCode       String?
+  errorMessage    String?
+  requestedByType ActorType
+  requestedById   String?
+  startedAt       DateTime?         @db.Timestamptz(3)
+  completedAt     DateTime?         @db.Timestamptz(3)
+  searchCalls     Int               @default(0)
+  llmCalls        Int               @default(0)
+  llmInputTokens  Int               @default(0)
+  llmOutputTokens Int               @default(0)
+  // Cost in millionths of a US dollar, to avoid floating-point money.
+  costMicros      BigInt            @default(0)
+  // Per-stage counts (hits, rejected URLs, fetched, skipped, evidence...).
+  stats           Json?
+  createdAt       DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime          @updatedAt @db.Timestamptz(3)
+
+  sources     RunSource[]
+  evidence    Evidence[]
+  usageEvents UsageEvent[]
+
+  @@index([status, createdAt])
+}
+
+model SourceDocument {
+  id                String          @id @default(uuid()) @db.Uuid
+  canonicalUrl      String          @unique
+  domain            String
+  // eTLD+1 (e.g. "example.co.uk"); used to judge source independence.
+  registrableDomain String
+  title             String?
+  sourceType        SourceType      @default(WEB_PAGE)
+  retrievalStatus   RetrievalStatus @default(PENDING)
+  skipReason        String?
+  httpStatus        Int?
+  contentType       String?
+  retrievedAt       DateTime?       @db.Timestamptz(3)
+  // SHA-256 of normalized extracted text; detects syndicated copies.
+  contentHash       String?
+  extractedText     String?
+  companyId         String?         @db.Uuid
+  createdAt         DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime        @updatedAt @db.Timestamptz(3)
+
+  company           Company?    @relation("CompanySources", fields: [companyId], references: [id], onDelete: SetNull)
+  runs              RunSource[]
+  evidence          Evidence[]
+  discoveredCompany Company[]   @relation("CompanyProvenance")
+
+  @@index([registrableDomain])
+  @@index([contentHash])
+  @@index([companyId])
+}
+
+model RunSource {
+  runId       String   @db.Uuid
+  sourceId    String   @db.Uuid
+  searchRank  Int?
+  searchScore Float?
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+
+  run    ResearchRun    @relation(fields: [runId], references: [id], onDelete: Cascade)
+  source SourceDocument @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@id([runId, sourceId])
+  @@index([sourceId])
+}
+
+model Evidence {
+  id               String           @id @default(uuid()) @db.Uuid
+  sourceId         String           @db.Uuid
+  runId            String?          @db.Uuid
+  // Verbatim excerpt from the source's extracted text.
+  excerpt          String
+  excerptHash      String
+  problemSummary   String
+  workflow         String?
+  kind             EvidenceKind
+  confidence       Float
+  // Null means the impact is unknown; it must never be invented.
+  impactNote       String?
+  validationStatus ValidationStatus @default(PENDING)
+  validationNote   String?
+  llmModel         String?
+  promptVersion    String?
+  extractedAt      DateTime         @default(now()) @db.Timestamptz(3)
+
+  source   SourceDocument    @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  run      ResearchRun?      @relation(fields: [runId], references: [id], onDelete: SetNull)
+  clusters ClusterEvidence[]
+  scores   ScoreEvidence[]
+
+  @@unique([sourceId, excerptHash])
+  @@index([validationStatus])
+  @@index([runId])
+}
+
+// ---------------------------------------------------------------------------
+// Opportunities
+// ---------------------------------------------------------------------------
+
+model ProblemCluster {
+  id                      String    @id @default(uuid()) @db.Uuid
+  // Normalized title/segment key used to prevent duplicate clusters.
+  normalizedKey           String    @unique
+  title                   String
+  description             String
+  segment                 String
+  buyer                   String
+  alternatives            Json      @default("[]")
+  validationQuestions     Json      @default("[]")
+  independentCompanyCount Int       @default(0)
+  independentSourceCount  Int       @default(0)
+  // Weighted total computed in application code; not a success probability.
+  totalScore              Float?
+  // Sum of the weights of components that could be scored (0-1). Unknown
+  // components contribute nothing to totalScore, so this shows how complete it is.
+  scoreCoverage           Float?
+  weightsVersion          String?
+  scoredAt                DateTime? @db.Timestamptz(3)
+  createdAt               DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt               DateTime  @updatedAt @db.Timestamptz(3)
+
+  evidence ClusterEvidence[]
+  scores   ClusterScore[]
+  drafts   OutreachDraft[]
+
+  @@index([totalScore])
+}
+
+model ClusterEvidence {
+  clusterId  String   @db.Uuid
+  evidenceId String   @db.Uuid
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+
+  cluster  ProblemCluster @relation(fields: [clusterId], references: [id], onDelete: Cascade)
+  evidence Evidence       @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
+
+  @@id([clusterId, evidenceId])
+  // A piece of evidence supports at most one problem cluster.
+  @@unique([evidenceId])
+}
+
+model ClusterScore {
+  id             String         @id @default(uuid()) @db.Uuid
+  clusterId      String         @db.Uuid
+  component      ScoreComponent
+  // 0-5, or null when there is not enough evidence to score.
+  value          Float?
+  weight         Float
+  rationale      String
+  weightsVersion String
+  computedAt     DateTime       @default(now()) @db.Timestamptz(3)
+
+  cluster  ProblemCluster  @relation(fields: [clusterId], references: [id], onDelete: Cascade)
+  evidence ScoreEvidence[]
+
+  @@unique([clusterId, component])
+}
+
+model ScoreEvidence {
+  scoreId    String @db.Uuid
+  evidenceId String @db.Uuid
+
+  score    ClusterScore @relation(fields: [scoreId], references: [id], onDelete: Cascade)
+  evidence Evidence     @relation(fields: [evidenceId], references: [id], onDelete: Cascade)
+
+  @@id([scoreId, evidenceId])
+  @@index([evidenceId])
+}
+
+// ---------------------------------------------------------------------------
+// Companies and contacts
+// ---------------------------------------------------------------------------
+
+model Company {
+  id                 String                @id @default(uuid()) @db.Uuid
+  name               String
+  website            String?
+  domain             String                @unique
+  profile            Json?
+  researchStatus     CompanyResearchStatus @default(DISCOVERED)
+  // The source document this company was first discovered from.
+  provenanceSourceId String?               @db.Uuid
+  createdAt          DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime              @updatedAt @db.Timestamptz(3)
+
+  provenanceSource SourceDocument?  @relation("CompanyProvenance", fields: [provenanceSourceId], references: [id], onDelete: SetNull)
+  sources          SourceDocument[] @relation("CompanySources")
+  contacts         Contact[]
+  drafts           OutreachDraft[]
+}
+
+model Contact {
+  id                 String                    @id @default(uuid()) @db.Uuid
+  companyId          String                    @db.Uuid
+  name               String?
+  role               String?
+  email              String
+  emailNormalized    String
+  // Where the contact detail was publicly listed. Required: no invented contacts.
+  sourceUrl          String
+  verificationStatus ContactVerificationStatus @default(UNVERIFIED)
+  retrievedAt        DateTime                  @db.Timestamptz(3)
+  createdAt          DateTime                  @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime                  @updatedAt @db.Timestamptz(3)
+
+  company Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  drafts  OutreachDraft[]
+
+  @@unique([companyId, emailNormalized])
+  @@index([emailNormalized])
+}
+
+// ---------------------------------------------------------------------------
+// Outreach and approvals
+// ---------------------------------------------------------------------------
+
+model OutreachDraft {
+  id                String       @id @default(uuid()) @db.Uuid
+  companyId         String       @db.Uuid
+  contactId         String       @db.Uuid
+  // The problem this outreach asks about, if any.
+  opportunityId     String?      @db.Uuid
+  recipientEmail    String
+  subject           String
+  body              String
+  // SHA-256 over normalized recipient, subject and body.
+  contentHash       String
+  status            DraftStatus  @default(DRAFT)
+  createdByType     ActorType
+  createdById       String?      @db.Uuid
+  generatedByModel  String?
+  followUpOfId      String?      @db.Uuid
+  // Generated before the provider call so an ambiguous send can be reconciled.
+  rfcMessageId      String?      @unique
+  providerMessageId String?
+  providerThreadId  String?
+  providerResult    Json?
+  sendOutcome       SendOutcome?
+  sendAttemptedAt   DateTime?    @db.Timestamptz(3)
+  sentAt            DateTime?    @db.Timestamptz(3)
+  failureReason     String?
+  repliedAt         DateTime?    @db.Timestamptz(3)
+  // Set when a reply asked not to be contacted again.
+  optedOutAt        DateTime?    @db.Timestamptz(3)
+  createdAt         DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime     @updatedAt @db.Timestamptz(3)
+
+  // Restrict: outreach history must not disappear with a company or contact.
+  company     Company         @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  contact     Contact         @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  opportunity ProblemCluster? @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  createdBy   User?           @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  followUpOf  OutreachDraft?  @relation("FollowUps", fields: [followUpOfId], references: [id], onDelete: SetNull)
+  followUps   OutreachDraft[] @relation("FollowUps")
+  approvals   Approval[]
+
+  // At most one in-flight (DRAFT, APPROVED or SENDING) outreach per contact.
+  // The predicate is written in the form Postgres stores it, to avoid drift.
+  @@unique([contactId], map: "OutreachDraft_one_active_per_contact", where: raw("(status = ANY (ARRAY['DRAFT'::\"DraftStatus\", 'APPROVED'::\"DraftStatus\", 'SENDING'::\"DraftStatus\"]))"))
+  @@index([status])
+  @@index([contactId])
+  @@index([companyId])
+}
+
+model Approval {
+  id                 String    @id @default(uuid()) @db.Uuid
+  draftId            String    @db.Uuid
+  recipientEmail     String
+  contentHash        String
+  approvedById       String    @db.Uuid
+  approvedAt         DateTime  @default(now()) @db.Timestamptz(3)
+  expiresAt          DateTime  @db.Timestamptz(3)
+  invalidatedAt      DateTime? @db.Timestamptz(3)
+  invalidationReason String?
+  // Set when a send attempt uses this approval; an approval is single-use.
+  consumedAt         DateTime? @db.Timestamptz(3)
+
+  draft      OutreachDraft @relation(fields: [draftId], references: [id], onDelete: Restrict)
+  approvedBy User          @relation(fields: [approvedById], references: [id], onDelete: Restrict)
+
+  // At most one live (neither invalidated nor consumed) approval per draft.
+  @@unique([draftId], map: "Approval_one_live_per_draft", where: { invalidatedAt: null, consumedAt: null })
+  @@index([draftId])
+}
+
+model SuppressionRecord {
+  id          String           @id @default(uuid()) @db.Uuid
+  scope       SuppressionScope
+  // Lowercased email address or domain.
+  value       String
+  reason      String
+  source      String
+  createdById String?          @db.Uuid
+  createdAt   DateTime         @default(now()) @db.Timestamptz(3)
+
+  @@unique([scope, value])
+}
+
+// ---------------------------------------------------------------------------
+// Audit and usage
+// ---------------------------------------------------------------------------
+
+model AuditEvent {
+  id         String    @id @default(uuid()) @db.Uuid
+  actorType  ActorType
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String?
+  // Allowlisted, secret-free metadata only.
+  metadata   Json?
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+
+  @@index([entityType, entityId])
+  @@index([actorType, actorId])
+  @@index([createdAt])
+}
+
+model UsageEvent {
+  id           String    @id @default(uuid()) @db.Uuid
+  runId        String?   @db.Uuid
+  kind         UsageKind
+  provider     String
+  operation    String
+  inputTokens  Int?
+  outputTokens Int?
+  costMicros   BigInt
+  createdAt    DateTime  @default(now()) @db.Timestamptz(3)
+
+  run ResearchRun? @relation(fields: [runId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([runId])
+}

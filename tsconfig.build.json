@@ -1,0 +1,11 @@
+{
+  // Compiles the API for production (npm run build → dist/). Tests and scripts are excluded.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rootDir": "src",
+    "outDir": "dist",
+    "sourceMap": true
+  },
+  "include": ["src"]
+}
